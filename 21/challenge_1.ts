@@ -1,104 +1,54 @@
-import { readFileSync } from 'fs'
+import {} from 'fs'
 
-class StringStream {
-  bits: string
-  length: number
-  constructor(bits: string) {
-    this.bits = bits
-    this.length = this.bits.length
+let playerCounter = 1
+
+class Player {
+  position: number
+  id: number
+  score: number = 0
+
+  constructor(position: number) {
+    this.position = position
+    this.id = playerCounter++
   }
 
-  shift(number: number = 1) {
-    if(number > this.length) throw new Error("End of stream!")
-    const toBeShifted = this.bits.slice(0,number)
-    this.bits = this.bits.slice(number)
-    this.length = this.bits.length
-    return toBeShifted
-  }
-  
-  pop(number: number = 1) {
-    if(number > this.length) throw new Error("End of stream!")
-    const toBePopped = this.bits.slice(this.bits.length - number)
-    this.bits = this.bits.slice(0, this.bits.length - number)
-    this.length = this.bits.length
-    return toBePopped
+  move(steps: number) {
+    this.position = (((this.position + steps) - 1) % 10) + 1
+    this.score += this.position
   }
 }
 
-abstract class Packet {
-  abstract packetVersion: number
-  abstract typeId: number
+abstract class Die {
+  abstract roll(): number
 }
 
-class PayloadPacket extends Packet {
-  packetVersion: number  
-  typeId: number
-  payload: number
-  
-  constructor(packetVersion: number, typeId: number, payload: number) {
-    super()
-    this.packetVersion = packetVersion
-    this.typeId = typeId
-    this.payload = payload
+class DeterministicDie extends Die {
+  nextNumber: number = 1
+  rollCounter = 0
+
+  roll(): number {
+    this.rollCounter++
+    console.log(this.rollCounter)
+    const rolledNumber = this.nextNumber
+    this.nextNumber = (((this.nextNumber + 1) - 1) % 100) + 1
+    return rolledNumber
   }
 }
 
-class OperatorPacket extends Packet {
-  packetVersion: number
-  typeId: number
-  subPackets: Packet[]
-  
-  constructor(packetVersion: number, typeId: number, subPackets: Packet[]) {
-    super()
-    this.packetVersion = packetVersion
-    this.typeId = typeId
-    this.subPackets = subPackets
-  }
-}
+const player1 = new Player(9)
+const player2 = new Player(3)
+const die = new DeterministicDie()
+const players = [player1, player2]
 
-const input = new StringStream(String(readFileSync('./input.txt')).split('') .map(char => parseInt(char, 16).toString(2).padStart(4, '0')).join(''))
-
-function parseInput(input: StringStream) : Packet {
-  const packetVersion = parseInt(input.shift(3), 2)
-  const typeId = parseInt(input.shift(3), 2)
-  
-  if(typeId === 4) { // PayloadPacket
-    let payload = ''
-    while(true) {
-      const continueFlag = parseInt(input.shift(1), 2)
-      payload += input.shift(4)
-      if(continueFlag === 0) break
+while(true) {
+  for(const player of players) {
+    player.move(die.roll() + die.roll() + die.roll())
+    if(player.score >= 1000) {
+      console.log(`PLAYER ${player.id} WINS!`)
+      const otherPlayer = players.find(p => p.id !== player.id)!
+      console.log(player.id, otherPlayer.id)
+      console.log(otherPlayer.score, die.rollCounter, die.rollCounter * otherPlayer.score)
+      process.exit()
     }
-    return new PayloadPacket(packetVersion, typeId, parseInt(payload, 2))
-  } 
-  else { // OperatorPacket
-    const lengthTypeId = parseInt(input.shift(1), 2)
-    const counter: number = parseInt(input.shift(lengthTypeId === 0 ? 15 : 11), 2) 
-    const subPackets: Packet[] = []
-    if(lengthTypeId === 0) { // Given length
-      const subInput = new StringStream(input.shift(counter))
-      while(subInput.length > 0) {
-        subPackets.push(parseInput(subInput))
-      }
-    } 
-    else { // Given number of subPackets
-      for(let i = 0; i < counter; i++) {
-        subPackets.push(parseInput(input))
-      }
-    }
-    return new OperatorPacket(packetVersion, typeId, subPackets)
   }
 }
-
-function getRecursivePacketVersionSum(packet: Packet): number {
-  if(packet instanceof OperatorPacket) {
-    return packet.packetVersion + packet.subPackets.map(packet => getRecursivePacketVersionSum(packet)).reduce((sum, current) => sum + current, 0)
-  }
-  return packet.packetVersion
-}
-
-const packet = parseInput(input)
-console.log(input.length)
-console.log(packet)
-
-console.log(getRecursivePacketVersionSum(packet))
